@@ -29,6 +29,7 @@ class TableProcessor(BlockProcessor):
 
     RE_CODE_PIPES = re.compile(r'(?:(\\\\)|(\\`+)|(`+)|(\\\|)|(\|))')
     RE_END_BORDER = re.compile(r'(?<!\\)(?:\\\\)*\|$')
+    RE_CAPTION = re.compile(r'^\[(.*)\](\{(.*)\})?$')
 
     def __init__(self, parser):
         self.border = False
@@ -74,6 +75,18 @@ class TableProcessor(BlockProcessor):
     def run(self, parent, blocks):
         """ Parse a table block and build table. """
         block = blocks.pop(0).split('\n')
+        # Get caption
+        captions = self.RE_CAPTION.search(block[-1])
+        if '|' not in block[-1] and captions:
+            # captions = self.RE_CAPTION.search(block[-1]).groups()
+            captions = [captions.group(1), captions.group(3)]
+            print(captions)
+            # captions = [ caption for caption in captions if caption is not None ]
+            # print('>>', captions)
+            # Remove caption row
+            block = block[:-1]
+        else:
+            captions = [None, None]
         header = block[0].strip(' ')
         rows = [] if len(block) < 3 else block[2:]
 
@@ -92,6 +105,14 @@ class TableProcessor(BlockProcessor):
 
         # Build table
         table = etree.SubElement(parent, 'table')
+        # Build Caption
+        if captions[0]:
+            c = etree.SubElement(table, 'caption')
+            c.text = captions[0]
+        if captions[1]:
+            c = etree.SubElement(table, 'caption')
+            c.set('class', 'source')
+            c.text = captions[1]
         thead = etree.SubElement(table, 'thead')
         self._build_row(header, thead, align)
         tbody = etree.SubElement(table, 'tbody')
