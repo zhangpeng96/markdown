@@ -156,11 +156,17 @@ class TableProcessor(BlockProcessor):
         tag = 'td'
         if parent.tag == 'thead':
             tag = 'th'
-        cells = self._split_row(row)
+        cells, spans = self._split_row(row, span=True)
         # We use align here rather than cells to ensure every row
         # contains the same number of columns.
         for i, a in enumerate(align):
+            # Spanning value will not parse
+            if spans[i] == 0:
+                continue
             c = etree.SubElement(tr, tag)
+            # Parse spanning cell's width
+            if spans[i] > 0:
+                c.set('colspan', str(spans[i]))
             try:
                 c.text = cells[i].strip(' ')
             except IndexError:  # pragma: no cover
@@ -168,13 +174,17 @@ class TableProcessor(BlockProcessor):
             if a:
                 c.set('align', a)
 
-    def _split_row(self, row):
+    def _split_row(self, row, span=False):
+        """ Span switch is a temporary testing solution """
         """ split a row of text into list of cells. """
         if self.border:
             if row.startswith('|'):
                 row = row[1:]
             row = self.RE_END_BORDER.sub('', row)
-        return self._split(row)
+        if span:
+            return self._split(row)
+        else:
+            return self._split(row)[0]
 
     def _split(self, row):
         """ split a row of text with some code into a list of cells. """
@@ -242,11 +252,34 @@ class TableProcessor(BlockProcessor):
 
         # Split row according to table delimeters.
         pos = 0
+        spans = []
         for pipe in good_pipes:
+            # If pipes are continuous or the element is `<`, span it
+            if pos == pipe or row[pos:pipe].strip(' ') == '<':
+                spans.append(0)
+            else:
+                spans.append(-1)
+            # Table values
             elements.append(row[pos:pipe])
             pos = pipe + 1
+
+        # Last value of current row
+        if len(row[pos:]) == 0 or row[pos:].strip(' ') == '<':
+            spans.append(0)
+        else:
+            spans.append(-1)
         elements.append(row[pos:])
-        return elements
+
+        # Span width count
+        pos = 0
+        for i, (curr, succ) in enumerate(zip(spans[:-1], spans[1:])):
+            if curr == -1 and succ == 0:
+                spans[i] = 1
+                pos = i
+            if succ == 0:
+                spans[pos] = spans[pos] + 1
+        # print(spans)
+        return elements, spans
 
 
 class TableExtension(Extension):
