@@ -34,7 +34,7 @@ class TableProcessor(BlockProcessor):
     def __init__(self, parser):
         self.border = False
         self.separator = ''
-        # Index 0: headers end; 1: bodies begin; 2: bodies end; 3: caption
+        # #0: headers end; #1: bodies begin; #2: bodies end; #3: caption
         self.struct = [0, 0, 0, 0]
         self.rowspans_head = []
         self.rowspans_body = []
@@ -76,7 +76,7 @@ class TableProcessor(BlockProcessor):
                         break
 
             if is_table:
-                # Multi-headers (Max 3)
+                # Multi-header (Max 3 rows)
                 for i, row in enumerate(rows[:4]):
                     row = self._split_row(row)                    
                     is_table = (len(row) == row0_len) and set(''.join(row)) <= set('|:- ')
@@ -88,23 +88,18 @@ class TableProcessor(BlockProcessor):
                 rows_grid = [ self._split_row(row) for row in rows ]
                 # Non-headers
                 is_table = all([ len(row) == row0_len for row in rows_grid ])
-                # self.struct[1] = self.struct[0] + 1 if self.separator else 0
                 # Rowspan
-                # print(self.struct)
                 if is_table:
                     ph, pb = slice(0, self.struct[0]), slice(self.struct[1], self.struct[2])
-                    # rowspans_header = [ [ cell.strip(' ') == '^' for cell in row ] for row in rows_grid[ph] ]
                     span_fn = lambda x: 0 if x.strip(' ') == '^' else -1
-                    # rowspans = [ [ span_fn(cell) for cell in row ] for row in rows_grid[pb] ]
+                    # Count `^` value vertically
                     rowspans_head = [ [ span_fn(cell) for cell in col ] for col in zip(*rows_grid[ph]) ]
                     rowspans_body = [ [ span_fn(cell) for cell in col ] for col in zip(*rows_grid[pb]) ]
                     rowspans_head = [ self._span_count(col) for col in rowspans_head ]
                     rowspans_body = [ self._span_count(col) for col in rowspans_body ]
+                    # Transposite matrix row by row
                     self.rowspans_head = list(zip(*rowspans_head))
                     self.rowspans_body = list(zip(*rowspans_body))
-                    # print(rowspans, self.rowspans)
-                    # for col in map(list, zip(*rowspans)):
-                        # print(self._span_count(col))
 
         return is_table
 
@@ -112,19 +107,14 @@ class TableProcessor(BlockProcessor):
         """ Parse a table block and build table. """
         block = blocks.pop(0).split('\n')
         # Get caption
-        # print(self.struct)
         if '|' not in block[-1] and self.struct[3]:
             captions = self.RE_CAPTION.search(block[-1])
             captions = [captions.group(1), captions.group(3)]
-            # print(captions)
-            # captions = [ caption for caption in captions if caption is not None ]
-            # print('>>', captions)
             # Remove caption row
             block = block[:-1]
         else:
             captions = [None, None]
         headers = block[0:self.struct[0]]
-        # rows = [] if len(block) < 3 else block[2:]
         rows = block[self.struct[1]:self.struct[2]]
 
         # Get alignment of columns
@@ -159,7 +149,6 @@ class TableProcessor(BlockProcessor):
             self._build_empty_row(tbody, align)
         else:
             for i, row in enumerate(rows):
-                # print('-*****', i, self.rowspans[i])
                 self._build_row(row.strip(' '), tbody, align, self.rowspans_body[i])
 
     def _build_empty_row(self, parent, align):
@@ -172,23 +161,22 @@ class TableProcessor(BlockProcessor):
 
     def _build_row(self, row, parent, align, rowspan=tuple()):
         """ Given a row of text, build table cells. """
-        # print(rowspan)
         tr = etree.SubElement(parent, 'tr')
         tag = 'td'
         if parent.tag == 'thead':
             tag = 'th'
-        cells, spans = self._split_row(row, span=True)
+        cells, colspan = self._split_row(row, span=True)
         # We use align here rather than cells to ensure every row
         # contains the same number of columns.
         for i, a in enumerate(align):
-            # Spanning value will not parse
-            if spans[i] == 0 or rowspan[i] == 0:
+            # Spanning value will not be parsed
+            if colspan[i] == 0 or rowspan[i] == 0:
                 continue
             c = etree.SubElement(tr, tag)
-            # Parse spanning cell's width
-            if spans[i] > 0:
-                c.set('colspan', str(spans[i]))
-            # Parse spanning cell's height
+            # Parse width of spanning cells
+            if colspan[i] > 0:
+                c.set('colspan', str(colspan[i]))
+            # Parse height of spanning cells
             if rowspan[i] > 0:
                 c.set('rowspan', str(rowspan[i]))
             try:
@@ -307,7 +295,6 @@ class TableProcessor(BlockProcessor):
         # Span width count
         pos = 0
         spans = self._span_count(spans)
-        # print(spans)
         return elements, spans
 
 
