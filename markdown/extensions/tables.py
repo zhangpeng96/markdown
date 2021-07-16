@@ -306,12 +306,7 @@ class TableProcessor(BlockProcessor):
 
         # Span width count
         pos = 0
-        for i, (curr, succ) in enumerate(zip(spans[:-1], spans[1:])):
-            if curr == -1 and succ == 0:
-                spans[i] = 1
-                pos = i
-            if succ == 0:
-                spans[pos] = spans[pos] + 1
+        spans = self._span_count(spans)
         # print(spans)
         return elements, spans
 
