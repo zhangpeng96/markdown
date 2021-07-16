@@ -34,6 +34,8 @@ class TableProcessor(BlockProcessor):
     def __init__(self, parser):
         self.border = False
         self.separator = ''
+        # Index 0: headers end; 1: bodies begin; 2: bodies end; 3: caption
+        self.struct = [0, 0, 0, 0]
         super().__init__(parser)
 
     def test(self, parent, block):
@@ -45,6 +47,13 @@ class TableProcessor(BlockProcessor):
         is_table = False
         rows = [row.strip(' ') for row in block.split('\n')]
         if len(rows) > 1:
+            if self.RE_CAPTION.search(rows[-1]):
+                self.struct[3] = 1
+                self.struct[2] = len(rows) - 1
+                rows = rows[:-1]
+            else:
+                self.struct[2] = len(rows)
+            # table cols count
             header0 = rows[0]
             self.border = PIPE_NONE
             if header0.startswith('|'):
@@ -65,10 +74,18 @@ class TableProcessor(BlockProcessor):
                         break
 
             if is_table:
-                row = self._split_row(rows[1])
-                is_table = (len(row) == row0_len) and set(''.join(row)) <= set('|:- ')
-                if is_table:
-                    self.separator = row
+                # Multi-headers (Max 3)
+                for i, row in enumerate(rows[:4]):
+                    row = self._split_row(row)
+                    is_table = (len(row) == row0_len) and set(''.join(row)) <= set('|:- ')
+                    if is_table:
+                        self.separator = row
+                        self.struct[0] = i
+                        self.struct[1] = i + 1
+                        break
+                # Non-headers
+                is_table = all([ len(self._split_row(row)) == row0_len for row in rows ])
+                # self.struct[1] = self.struct[0] + 1 if self.separator else 0
 
         return is_table
 
@@ -76,19 +93,20 @@ class TableProcessor(BlockProcessor):
         """ Parse a table block and build table. """
         block = blocks.pop(0).split('\n')
         # Get caption
-        captions = self.RE_CAPTION.search(block[-1])
-        if '|' not in block[-1] and captions:
-            # captions = self.RE_CAPTION.search(block[-1]).groups()
+        # print(self.struct)
+        if '|' not in block[-1] and self.struct[3]:
+            captions = self.RE_CAPTION.search(block[-1])
             captions = [captions.group(1), captions.group(3)]
-            print(captions)
+            # print(captions)
             # captions = [ caption for caption in captions if caption is not None ]
             # print('>>', captions)
             # Remove caption row
             block = block[:-1]
         else:
             captions = [None, None]
-        header = block[0].strip(' ')
-        rows = [] if len(block) < 3 else block[2:]
+        headers = block[0:self.struct[0]]
+        # rows = [] if len(block) < 3 else block[2:]
+        rows = block[self.struct[1]:self.struct[2]]
 
         # Get alignment of columns
         align = []
@@ -114,7 +132,8 @@ class TableProcessor(BlockProcessor):
             c.set('class', 'source')
             c.text = captions[1]
         thead = etree.SubElement(table, 'thead')
-        self._build_row(header, thead, align)
+        for header in headers:
+            self._build_row(header, thead, align)
         tbody = etree.SubElement(table, 'tbody')
         if len(rows) == 0:
             # Handle empty table
